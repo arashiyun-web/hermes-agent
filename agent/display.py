@@ -18,7 +18,9 @@ from urllib.parse import urlsplit
 from utils import safe_json_loads
 from agent.i18n import t
 from agent.redact import redact_sensitive_text
-from agent.tool_result_classification import file_mutation_result_landed, is_guardrail_refusal
+from agent.tool_result_classification import (
+    file_mutation_result_landed, is_guardrail_refusal, payload_error_verdict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1030,7 +1032,17 @@ def _detect_tool_failure(tool_name: str, result: Any) -> tuple[bool, str]:
         err = data.get("error") or data.get("message")
         if err and (failed or "error" in data):
             return True, f" [{_trim_error(str(err))}]"
-    # Multimodal results (dicts) are successes; failures arrive as JSON-encoded strings.
+        # Result rows (web_extract) always carry an error field. null is not a
+        # failure; a non-empty nested error still is. Stop before the raw-text
+        # scan, which treats the letters `"error"` as a failure even for null.
+        verdict = payload_error_verdict(data)
+        if verdict is not None:
+            present, message = verdict
+            if not present:
+                return False, ""
+            return True, f" [{_trim_error(message)}]"
+    # Unparsed text only. A parsed object was classified above, so `"error": null`
+    # and page prose cannot take this branch.
     if isinstance(result, str) and (
         '"error"' in result[:500].lower() or '"failed"' in result[:500].lower() or result.startswith("Error")
     ):

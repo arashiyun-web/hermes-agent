@@ -128,6 +128,58 @@ class TestDetectToolFailureStructured:
         assert _detect_tool_failure("web_search", result) == (False, "")
 
 
+class TestWebExtractErrorNullVsNested:
+    """web_extract writes ``"error": null`` on a successful page. That slot must
+    not set the tool event's is_error flag. A real nested error still must.
+    """
+
+    def _page(self, error, content="This domain is for use in illustrative examples in documents."):
+        return json.dumps({
+            "results": [{
+                "url": "https://example.com",
+                "title": "Example Domain",
+                "content": content,
+                "error": error,
+            }],
+        }, indent=2, ensure_ascii=False)
+
+    def test_null_error_is_not_a_failure_even_though_the_key_is_present(self):
+        result = self._page(None)
+        # The old text scan matched this key inside the first 500 characters.
+        assert '"error"' in result[:500].lower()
+        assert _detect_tool_failure("web_extract", result) == (False, "")
+
+    def test_page_prose_mentioning_error_stays_a_success_when_the_field_is_null(self):
+        content = 'The JSON field "error" is described here. Nothing failed.'
+        assert _detect_tool_failure("web_extract", self._page(None, content)) == (False, "")
+
+    def test_nested_error_is_a_failure_even_when_page_text_is_present(self):
+        result = self._page(
+            "Local fetch failed: timed out",
+            content="Example Domain\nThis domain is for use in illustrative examples.",
+        )
+        is_failure, suffix = _detect_tool_failure("web_extract", result)
+        assert is_failure is True
+        assert "timed out" in suffix
+
+    def test_one_real_error_among_null_rows_is_a_failure(self):
+        result = json.dumps({"results": [
+            {"url": "https://example.com", "title": "Example Domain", "content": "ok", "error": None},
+            {"url": "https://example.com/missing", "title": "", "content": "", "error": "HTTP 404"},
+        ]})
+        is_failure, suffix = _detect_tool_failure("web_extract", result)
+        assert is_failure is True
+        assert "404" in suffix
+
+    def test_memory_ok_payload_is_not_an_error(self):
+        result = json.dumps({"ok": True, "items": []})
+        assert _detect_tool_failure("memory_search", result) == (False, "")
+
+    def test_unparsed_error_prefix_is_still_a_failure(self):
+        is_failure, _suffix = _detect_tool_failure("web_extract", "Error: connection refused")
+        assert is_failure is True
+
+
 
 class TestGetCuteToolMessageFailureSuffix:
     """End-to-end: failure suffix is appended by get_cute_tool_message."""
