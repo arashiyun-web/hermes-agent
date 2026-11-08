@@ -476,8 +476,21 @@ def _provider_is_ready(provider) -> bool:
 _WEB_CHECK_SKIP = frozenset({"xai"})
 
 
+def check_web_extract_available() -> bool:
+    """``check_fn`` for ``web_extract``: a real page reader, not only a search key.
+
+    Search credentials light the tool, and so does the local HTTP reader. A
+    session whose web toolset is enabled but has no search backend still has
+    a tool the model can call, instead of an empty schema it fills in as prose.
+    """
+    if check_web_api_key():
+        return True
+    from tools.web_tools_local import local_extract_available
+    return local_extract_available()
+
+
 def check_web_api_key() -> bool:
-    """``check_fn`` gate for web_search / web_extract: is any web backend available?
+    """``check_fn`` gate for web_search: is any web backend available?
 
     A plugin-registered provider reporting ``is_available()`` must light the tools up even with no
     built-in credentials; resolution funnels through :func:`_is_backend_available`.
@@ -568,6 +581,6 @@ registry.register(
         args.get("urls", [])[:5] if isinstance(args.get("urls"), list) else [], "markdown",
         char_limit=args.get("char_limit"),
     ),
-    check_fn=check_web_api_key, requires_env=_web_requires_env(), is_async=True, emoji="📄",
+    check_fn=check_web_extract_available, requires_env=_web_requires_env(), is_async=True, emoji="📄",
     max_result_size_chars=100_000,
 )

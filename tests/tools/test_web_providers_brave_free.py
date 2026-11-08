@@ -8,7 +8,7 @@ Covers:
 - _is_backend_available("brave-free") integration
 - _get_backend() recognizes "brave-free" as a valid configured backend
 - check_web_api_key() includes brave-free in availability check
-- web_extract returns a search-only error when brave-free is active
+- web_extract reads the page locally when brave-free (search-only) is active
 """
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ class TestBraveFreeBackendWiring:
 
 
 # ---------------------------------------------------------------------------
-# brave-free is search-only: web_extract returns a clear error
+# brave-free is search-only: web_extract reads the page with the local HTTP reader
 # ---------------------------------------------------------------------------
 
 
@@ -154,7 +154,7 @@ class TestBraveFreeSearchOnlyErrors:
         from agent.web_search_registry import _reset_for_tests
         _reset_for_tests()
 
-    def test_web_extract_returns_search_only_error(self, monkeypatch):
+    def test_web_extract_reads_locally_when_backend_is_search_only(self, monkeypatch):
         import asyncio
         from tools import web_tools
 
@@ -166,11 +166,23 @@ class TestBraveFreeSearchOnlyErrors:
 
         monkeypatch.setattr(web_tools, "async_is_safe_url", _allow_ssrf)
         monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+        fetched = {}
+
+        def _fetch(url, **_kwargs):
+            fetched["url"] = url
+            return "text/html", (
+                "<html><head><title>YUN1_LOCAL_EXTRACT_SENTINEL</title></head>"
+                "<body><p>synthetic page</p></body></html>"
+            )
+
+        monkeypatch.setattr("tools.web_tools_local.fetch_public_page", _fetch)
 
         result_str = asyncio.get_event_loop().run_until_complete(
             web_tools.web_extract_tool(["https://example.com"])
         )
         result = json.loads(result_str)
-        assert result["success"] is False
-        assert "search-only" in result["error"].lower()
-        assert "brave" in result["error"].lower()
+        assert fetched["url"] == "https://example.com"
+        page = result["results"][0]
+        assert page["title"] == "YUN1_LOCAL_EXTRACT_SENTINEL"
+        assert "synthetic page" in page["content"]
+        assert not page.get("error")
