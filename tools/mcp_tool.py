@@ -170,7 +170,11 @@ def _ensure_mcp_sdk() -> bool:
             _MCP_SAMPLING_TYPES, _MCP_ELICITATION_TYPES, _MCP_NOTIFICATION_TYPES = [
                 _import_sdk_names(*family) for family in _OPTIONAL_TYPE_FAMILIES]
         else:
+            # find_spec can see a namespace or a different distribution named mcp.
+            # That is not the SDK: leave the flag false so connect reports it missing
+            # instead of continuing and crashing on an unbound ClientSession.
             logger.debug("mcp package not installed -- MCP tool support disabled")
+            _MCP_AVAILABLE = False
         if _MCP_AVAILABLE:
             try:
                 _JSONRPC_METHOD_NOT_FOUND = importlib.import_module("mcp.types").METHOD_NOT_FOUND
@@ -182,6 +186,53 @@ def _ensure_mcp_sdk() -> bool:
         _MCP_LOGGING_CALLBACK_SUPPORTED = _client_session_accepts("logging_callback")
         _MCP_SDK_IMPORT_ATTEMPTED = True
         return _MCP_AVAILABLE
+
+
+def _mcp_spec_present() -> bool:
+    """Whether import machinery can see a top-level ``mcp`` distribution right now."""
+    importlib.invalidate_caches()
+    try:
+        return importlib.util.find_spec("mcp") is not None
+    except (ImportError, ValueError, AttributeError):
+        return False
+
+
+def prepare_mcp_sdk_for_cli() -> bool:
+    """Import the MCP SDK for an explicit CLI connect, refreshing a stale miss.
+
+    ``_MCP_AVAILABLE`` is sampled once, when this module is imported. Process boot
+    (``activate_dependencies``) can replace ``sys.path`` with the PM environment
+    before that sample, so a direct ``python -c 'import mcp'`` in the launch
+    interpreter succeeds while ``hermes mcp test`` still takes the "SDK not
+    installed" branch. Re-check the finder cache, and if the anchor is still
+    absent ask PM for the declared ``mcp`` extra (a no-op when it already
+    imports; refused when lazy installs are off). A caller that patched
+    ``_MCP_AVAILABLE`` false and never calls this function is unchanged.
+    """
+    global _MCP_AVAILABLE, _MCP_SDK_IMPORT_ATTEMPTED
+    if _ensure_mcp_sdk():
+        return True
+    found = _mcp_spec_present()
+    activation_error: Optional[BaseException] = None
+    if not found:
+        try:
+            from pm import ensure_import
+            ensure_import("mcp")
+        except Exception as exc:
+            activation_error = exc
+            logger.debug("mcp extra was not activated", exc_info=True)
+        else:
+            found = _mcp_spec_present()
+    if not found:
+        # PM installed the extra into a generation this process has not adopted.
+        # Say so; the generic "not installed" line would hide a finished install.
+        if activation_error is not None and "restart" in str(activation_error).lower():
+            raise ImportError(str(activation_error)) from activation_error
+        return False
+    if ClientSession is None:
+        _MCP_SDK_IMPORT_ATTEMPTED = False
+    _MCP_AVAILABLE = True
+    return _ensure_mcp_sdk()
 
 
 _SDK_HTTPX_MOD = None

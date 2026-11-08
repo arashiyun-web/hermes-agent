@@ -863,6 +863,11 @@ def cmd_mcp_test(args):
 
     start = time.monotonic()
     try:
+        # The probe's stdio gate trusts a one-shot import flag. Refresh it here so
+        # a PM path that hid an installed SDK, or an extra that still needs enabling,
+        # is resolved before that gate reports "not installed".
+        from tools.mcp_tool import prepare_mcp_sdk_for_cli
+        prepare_mcp_sdk_for_cli()
         tools = _probe_single_server(name, cfg)
     except Exception as exc:
         elapsed = time.monotonic() - start

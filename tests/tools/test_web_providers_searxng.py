@@ -230,7 +230,7 @@ class TestSearXNGOnlyExtractCrawlErrors:
         from agent.web_search_registry import _reset_for_tests
         _reset_for_tests()
 
-    def test_web_extract_searxng_returns_clear_error(self, monkeypatch):
+    def test_web_extract_reads_locally_when_backend_is_search_only(self, monkeypatch):
         import asyncio
         from tools import web_tools
 
@@ -242,10 +242,25 @@ class TestSearXNGOnlyExtractCrawlErrors:
 
         monkeypatch.setattr(web_tools, "async_is_safe_url", _allow_ssrf)
         monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+        fetched = {}
+
+        def _fetch(url, **_kwargs):
+            fetched["url"] = url
+            return "text/html", (
+                "<html><head><title>YUN1_LOCAL_EXTRACT_SENTINEL</title></head>"
+                "<body><p>synthetic page</p></body></html>"
+            )
+
+        monkeypatch.setattr("tools.web_tools_local.fetch_public_page", _fetch)
 
         result_str = asyncio.get_event_loop().run_until_complete(
             web_tools.web_extract_tool(["https://example.com"])
         )
         result = json.loads(result_str)
-        assert result["success"] is False
-        assert "search-only" in result["error"].lower() or "SearXNG" in result["error"]
+        # SearXNG cannot fetch the page. The local reader does. The sentinel is
+        # not on example.com, so a live fetch cannot satisfy this assertion.
+        assert fetched["url"] == "https://example.com"
+        page = result["results"][0]
+        assert page["title"] == "YUN1_LOCAL_EXTRACT_SENTINEL"
+        assert "synthetic page" in page["content"]
+        assert not page.get("error")

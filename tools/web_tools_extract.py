@@ -109,28 +109,62 @@ def _validate_extract_urls(urls: List[Any]):
     return normalized_urls, normalized_indices, invalid_urls, None
 
 
+def _search_only_message(provider) -> str:
+    return (
+        f"{provider.display_name} is a search-only backend and cannot extract URL content. "
+        "Set web.extract_backend to " + _EXTRACT_BACKENDS_HINT
+    )
+
+
+def _local_reader_or_error(provider, error: str):
+    """Use the local HTTP reader when ``provider`` cannot fetch a page.
+
+    An explicit extract vendor that supports extract is never replaced. A
+    stored selection whose provider is not registered stays a strict error
+    (the caller does not reach here). Search-only backends and an empty
+    extract walk read the URL locally instead of handing the model an error
+    it then narrates as page text.
+    """
+    from tools.web_tools_local import local_http_extract_provider
+
+    local = local_http_extract_provider()
+    if local is None:
+        return None, _extract_error_json(error)
+    if provider is not None:
+        logger.info(
+            "web extract: %s cannot fetch pages; using the local HTTP reader",
+            provider.display_name,
+        )
+    return local, None
+
+
 def _resolve_extract_provider(backend: str):
     """Resolve the extract provider for *backend*; returns ``(provider, error_json)``.
 
-    A registered search-only backend is a typed error (never a silent switch). An unregistered name with
-    a stored web selection is a strict-selection error; with no selection, fall through to the walk.
+    A registered extract-capable backend is used as-is. A registered search-only
+    backend falls through to the local HTTP reader. An unregistered name with a
+    stored web selection is a strict-selection error; with no selection, fall
+    through to the walk and then the local reader.
     """
     from agent.web_search_registry import get_active_extract_provider, get_provider as _wsp_get_provider
     provider = _wsp_get_provider(backend) if backend else None
     if provider is not None and provider.supports_extract():
         return provider, None
     if provider is not None:
-        return None, _extract_error_json(
-            f"{provider.display_name} is a search-only backend and cannot extract URL content. "
-            "Set web.extract_backend to " + _EXTRACT_BACKENDS_HINT
-        )
+        return _local_reader_or_error(provider, _search_only_message(provider))
     if backend and selection_exists("web"):
         return None, _extract_error_json(_strict_selection_error("extract", backend))
     provider = get_active_extract_provider()
-    if provider is None:
+    if provider is not None and provider.supports_extract():
+        return provider, None
+    if provider is not None:
+        return _local_reader_or_error(provider, _search_only_message(provider))
+    from agent.web_search_registry import _disabled_web_plugin_for
+    if _disabled_web_plugin_for(capability="extract"):
         fallback = "No web extract provider configured. Set web.extract_backend to " + _EXTRACT_BACKENDS_HINT
         return None, _extract_error_json(_no_provider_error("extract", fallback))
-    return provider, None
+    fallback = "No web extract provider configured. Set web.extract_backend to " + _EXTRACT_BACKENDS_HINT
+    return _local_reader_or_error(None, fallback)
 
 
 def _extract_timeout_seconds() -> float:
