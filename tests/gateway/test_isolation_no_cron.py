@@ -34,3 +34,22 @@ def test_flag_does_not_start_the_ticker(monkeypatch):
     assert isolation.cron_scheduler_started() is False
     cron_stop.set()
     housekeeping.join(timeout=2)
+    from gateway.isolation import initialization_complete
+    assert initialization_complete() is True
+
+
+def test_isolation_does_not_boot_kanban_dispatcher(monkeypatch):
+    monkeypatch.setenv("HERMES_ISOLATION_NO_CRON", "1")
+    from gateway.kanban_watchers import GatewayKanbanWatchersMixin
+    assert GatewayKanbanWatchersMixin._kanban_dispatcher_boot(object()) is None
+
+
+def test_socket_ready_waits_for_initialization():
+    from gateway.isolation import isolation_status_ready
+    incomplete = {"cron_scheduler_started": False, "dispatcher_started": False, "initialization_complete": False}
+    started = {"cron_scheduler_started": False, "dispatcher_started": True, "initialization_complete": True}
+    ready = {"cron_scheduler_started": False, "dispatcher_started": False, "initialization_complete": True}
+    assert isolation_status_ready(incomplete) is False
+    assert isolation_status_ready(started) is False
+    assert isolation_status_ready(ready) is True
+    assert isolation_status_ready({}) is False

@@ -5635,6 +5635,8 @@ def _start_gateway_start_cron_and_housekeeping(runner):
                     "cron_provider": None, "runner": runner, "cron_thread": None},
             daemon=True, name="gateway-housekeeping")
         housekeeping_thread.start()
+        from gateway.isolation import mark_initialization_complete
+        mark_initialization_complete()
         return cron_stop, None, None, housekeeping_thread
     # The event loop is passed so cron delivery can use live adapters (E2EE support).
     from cron.scheduler_provider import (
@@ -5709,6 +5711,8 @@ def _start_gateway_start_cron_and_housekeeping(runner):
                 "cron_provider": cron_provider, "runner": runner, "cron_thread": cron_thread},
         daemon=True, name="gateway-housekeeping")
     housekeeping_thread.start()
+    from gateway.isolation import mark_initialization_complete
+    mark_initialization_complete()
     return cron_stop, cron_provider, cron_thread, housekeeping_thread
 
 

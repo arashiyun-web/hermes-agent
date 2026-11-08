@@ -213,6 +213,10 @@ class GatewayKanbanWatchersMixin:
         toggle which is re-read every tick. The env var is an escape hatch to
         disable without editing YAML.
         """
+        from gateway.isolation import isolation_disables_cron
+        if isolation_disables_cron():
+            logger.info("kanban dispatcher: not started (HERMES_ISOLATION_NO_CRON)")
+            return None
         try:
             from hermes_cli.config import load_config as _load_config
         except Exception:
@@ -248,6 +252,8 @@ class GatewayKanbanWatchersMixin:
             return None
         if _lock_state == "held":
             self._kanban_dispatcher_lock_handle = _lock_handle  # hold for process lifetime
+            from gateway.isolation import mark_dispatcher_started
+            mark_dispatcher_started()
             logger.info("kanban dispatcher: holding singleton dispatcher lock (%s)", _lock_path)
         else:
             logger.warning("kanban dispatcher: advisory lock unavailable at %s; proceeding "

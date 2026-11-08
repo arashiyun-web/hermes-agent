@@ -114,11 +114,14 @@ def build_identify_payload() -> dict[str, Any]:
 
 def build_status_payload() -> dict[str, Any]:
     """Default ``status`` answer — current runtime status, answered live."""
-    from gateway.isolation import cron_scheduler_started
+    from gateway.isolation import (
+        cron_scheduler_started, dispatcher_started, initialization_complete)
     from gateway.status import read_runtime_status
     return {**(read_runtime_status() or {}), "protocol": CONTROL_PROTOCOL_VERSION,
             "answered_at": time.time(), "answering_pid": os.getpid(),
-            "cron_scheduler_started": cron_scheduler_started()}
+            "cron_scheduler_started": cron_scheduler_started(),
+            "dispatcher_started": dispatcher_started(),
+            "initialization_complete": initialization_complete()}
 
 
 class GatewayControlServer:
