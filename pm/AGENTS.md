@@ -13,7 +13,12 @@ After changing `pyproject.toml`, run `hermes pm lock`, re-source `./activate`, a
 
 PM owns Hermes Python dependency changes. Use `pm.sync_venv(['extra'], explicit=True)`
 for declared runtime extras, `hermes pm install` for setup/sync, and `hermes pm repair`
-for damaged dependencies. Do not mutate Hermes environments with raw pip or uv.
+for damaged dependencies. `hermes pm install --extra mcp` unions `mcp` into the extras
+already recorded; it does not replace that list. Do not mutate Hermes environments with
+raw pip or uv. `pm repair` builds a fresh environment from the recorded graph. To keep
+the current generation selectable, `hermes pm generation pin` while it is selected
+(writes `selection.json` only). `hermes pm generation select <id>` points facts back at
+that pinned, complete directory and does not delete either generation.
 Use `pm.build_environment` for fresh build outputs and `pm.ensure_environment` for
 isolated tool environments. Callers receive an interpreter or tool path, not uv.
 Nix's declarative uv2nix builds and unrelated user projects remain independently owned.

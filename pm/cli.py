@@ -791,6 +791,34 @@ def cmd_repair(args) -> int:
     return 0
 
 
+def _generation_project(args):
+    return getattr(args, "project", None)
+
+
+def cmd_generation_pin(args) -> int:
+    from pm.generation_select import GenerationSelectError, pin_current_generation
+    from pm.paths import repo_root
+
+    try:
+        print(f"pinned {pin_current_generation(_generation_project(args) or repo_root())}")
+    except GenerationSelectError as exc:
+        print(f"✗ {exc}")
+        return 1
+    return 0
+
+
+def cmd_generation_select(args) -> int:
+    from pm.generation_select import GenerationSelectError, select_generation
+    from pm.paths import repo_root
+
+    try:
+        print(f"selected {select_generation(_generation_project(args) or repo_root(), args.generation)}")
+    except GenerationSelectError as exc:
+        print(f"✗ {exc}")
+        return 1
+    return 0
+
+
 def cmd_bundle(args) -> int:
     from scripts.bundles.native import stage_native
     return stage_native(args)
@@ -851,6 +879,23 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("repair", help="rebuild the recorded dependency environment without changing its graph")
     p.set_defaults(func=cmd_repair)
+
+    generation = sub.add_parser(
+        "generation",
+        help="pin or reselect an existing dependency generation",
+    )
+    generation_cmds = generation.add_subparsers(dest="generation_cmd", required=True)
+    pin = generation_cmds.add_parser(
+        "pin",
+        help="record the current selection beside its generation without changing facts",
+    )
+    pin.set_defaults(func=cmd_generation_pin)
+    select = generation_cmds.add_parser(
+        "select",
+        help="point facts at one pinned generation that is already complete on disk",
+    )
+    select.add_argument("generation", help="32-character generation directory name")
+    select.set_defaults(func=cmd_generation_select)
 
     p = sub.add_parser("gc", help="remove store entries nothing references")
     p.set_defaults(func=cmd_gc)

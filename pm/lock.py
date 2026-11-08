@@ -278,6 +278,18 @@ class Facts:
             fact["resolved_lock"] = str(resolved_lock.resolve())
         self._merge_and_write(name, fact)
 
+    def replace_venv_fact(self, fact: dict) -> None:
+        """Replace the venv selection with a record already checked by the caller.
+
+        Other packages in the file stay. This is the writer ``generation select``
+        uses so a rollback does not assemble facts by editing the file itself.
+        """
+        extras = fact.get("extras")
+        if (not isinstance(fact.get("stamp"), str) or not isinstance(fact.get("environment"), str)
+                or not isinstance(extras, list) or any(not isinstance(extra, str) for extra in extras)):
+            raise ValueError("venv selection fact is incomplete")
+        self._merge_and_write("venv", dict(fact))
+
     def retain(self, names: set[str]) -> None:
         """Drop unselected package facts from an exclusively owned staged store."""
         packages = _read(self.path, strict=True)["packages"]
