@@ -280,6 +280,69 @@ class TestMcpAdd:
 class TestMcpTest:
 
 
+    def test_no_install_fails_closed_without_touching_the_environment(self, tmp_path, capsys, monkeypatch):
+        """``hermes mcp test --no-install`` does not install, sync, or connect when the SDK is absent."""
+        import tools.mcp_tool as mcp_tool
+
+        _seed_config(tmp_path, {"cua-driver": {"command": "cua-driver", "args": ["mcp"]}})
+        from hermes_cli.mcp_config import _get_mcp_servers
+        _get_mcp_servers()  # profile scaffold from a config read is not a dependency install
+        before = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*"))
+        monkeypatch.setattr(mcp_tool, "_ensure_mcp_sdk", lambda: False)
+        monkeypatch.setattr(mcp_tool, "_mcp_spec_present", lambda: False)
+
+        def _forbidden(*_args, **_kwargs):
+            raise AssertionError("installer path reached")
+
+        monkeypatch.setattr("pm.ensure_import", _forbidden)
+        monkeypatch.setattr("pm.extras.ensure_import", _forbidden)
+        monkeypatch.setattr("pm.client.sync_venv", _forbidden)
+        monkeypatch.setattr("pm.client.ensure", _forbidden)
+
+        def _probe(*_args, **_kwargs):
+            raise AssertionError("probe ran without an importable SDK")
+
+        monkeypatch.setattr("hermes_cli.mcp_config._probe_single_server", _probe)
+        from hermes_cli.mcp_config import cmd_mcp_test
+
+        rc = cmd_mcp_test(_make_args(name="cua-driver", no_install=True))
+        out = capsys.readouterr().out
+        after = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*"))
+        assert rc == 1
+        assert "not importable" in out
+        assert "does not install or sync" in out
+        assert before == after
+
+    def test_no_install_uses_existing_sdk_without_installing(self, tmp_path, capsys, monkeypatch):
+        """When the SDK is already importable, --no-install handshakes and does not call PM."""
+        import importlib.util
+
+        if importlib.util.find_spec("mcp") is None:
+            pytest.skip("mcp extra is not installed in this interpreter")
+        _seed_config(tmp_path, {"yun-ceo-runtime": {"command": "true"}})
+
+        def _forbidden(*_args, **_kwargs):
+            raise AssertionError("installer path reached")
+
+        monkeypatch.setattr("pm.ensure_import", _forbidden)
+        monkeypatch.setattr("pm.extras.ensure_import", _forbidden)
+        monkeypatch.setattr("pm.client.sync_venv", _forbidden)
+        monkeypatch.setattr("pm.client.ensure", _forbidden)
+        seen = {}
+
+        def _probe(name, cfg, **_kwargs):
+            seen["name"] = name
+            seen["command"] = cfg.get("command")
+            return [("list_only", "handshake catalog")]
+
+        monkeypatch.setattr("hermes_cli.mcp_config._probe_single_server", _probe)
+        from hermes_cli.mcp_config import cmd_mcp_test
+
+        rc = cmd_mcp_test(_make_args(name="yun-ceo-runtime", no_install=True))
+        assert rc == 0
+        assert seen == {"name": "yun-ceo-runtime", "command": "true"}
+        assert "Tools discovered: 1" in capsys.readouterr().out
+
     def test_exit_codes_distinguish_failure_from_unknown_server(self, tmp_path, capsys, monkeypatch):
         """0 connected, 1 connection failed, 3 not in config — never argparse's 2, never a silent 0."""
         _seed_config(tmp_path, {"ink": {"url": "https://mcp.ml.ink/mcp"}})

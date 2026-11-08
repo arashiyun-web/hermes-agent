@@ -862,12 +862,17 @@ def cmd_mcp_test(args):
         _info("Auth: none")
 
     start = time.monotonic()
+    no_install = bool(getattr(args, "no_install", False))
     try:
         # The probe's stdio gate trusts a one-shot import flag. Refresh it here so
-        # a PM path that hid an installed SDK, or an extra that still needs enabling,
-        # is resolved before that gate reports "not installed".
+        # a PM path that hid an already-installed SDK is resolved before that gate
+        # reports "not installed". --no-install never asks PM to install or sync.
         from tools.mcp_tool import prepare_mcp_sdk_for_cli
-        prepare_mcp_sdk_for_cli()
+        ready = prepare_mcp_sdk_for_cli(allow_install=not no_install)
+        if no_install and not ready:
+            _error("MCP Python SDK is not importable in this process.")
+            _info("--no-install does not install or sync dependencies. Refusing to change the environment.")
+            return 1
         tools = _probe_single_server(name, cfg)
     except Exception as exc:
         elapsed = time.monotonic() - start

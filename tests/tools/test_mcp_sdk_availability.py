@@ -62,6 +62,36 @@ def test_prepare_asks_pm_for_the_mcp_extra_when_the_anchor_is_missing(monkeypatc
     assert mcp_tool._MCP_AVAILABLE is False
 
 
+def test_mcp_test_no_install_flag_is_opt_in():
+    import argparse
+
+    from hermes_cli.subcommands.mcp import build_mcp_parser
+
+    parser = argparse.ArgumentParser()
+    build_mcp_parser(parser.add_subparsers(dest="command"), cmd_mcp=lambda _ns: 0)
+    opted = parser.parse_args(["mcp", "test", "cua-driver", "--no-install"])
+    plain = parser.parse_args(["mcp", "test", "cua-driver"])
+    assert opted.no_install is True
+    assert plain.no_install is False
+
+
+def test_no_install_does_not_call_ensure_import_when_sdk_is_absent(monkeypatch):
+    """``allow_install=False`` must not reach PM, even when the anchor is missing."""
+    import tools.mcp_tool as mcp_tool
+
+    monkeypatch.setattr(mcp_tool, "_ensure_mcp_sdk", lambda: False)
+    monkeypatch.setattr(mcp_tool, "_mcp_spec_present", lambda: False)
+
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("installer path reached")
+
+    monkeypatch.setattr("pm.ensure_import", _forbidden)
+    monkeypatch.setattr("pm.extras.ensure_import", _forbidden)
+    monkeypatch.setattr("pm.client.sync_venv", _forbidden)
+
+    assert mcp_tool.prepare_mcp_sdk_for_cli(allow_install=False) is False
+
+
 def test_patched_unavailable_flag_still_blocks_stdio_without_prepare():
     """The stdio gate itself still honors a patched miss. CLI refresh is opt-in."""
     import asyncio

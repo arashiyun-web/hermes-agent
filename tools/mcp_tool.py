@@ -197,16 +197,18 @@ def _mcp_spec_present() -> bool:
         return False
 
 
-def prepare_mcp_sdk_for_cli() -> bool:
+def prepare_mcp_sdk_for_cli(*, allow_install: bool = True) -> bool:
     """Import the MCP SDK for an explicit CLI connect, refreshing a stale miss.
 
     ``_MCP_AVAILABLE`` is sampled once, when this module is imported. Process boot
     (``activate_dependencies``) can replace ``sys.path`` with the PM environment
     before that sample, so a direct ``python -c 'import mcp'`` in the launch
     interpreter succeeds while ``hermes mcp test`` still takes the "SDK not
-    installed" branch. Re-check the finder cache, and if the anchor is still
-    absent ask PM for the declared ``mcp`` extra (a no-op when it already
-    imports; refused when lazy installs are off). A caller that patched
+    installed" branch. Re-check the finder cache. When the anchor is still
+    absent and ``allow_install`` is true, ask PM for the declared ``mcp`` extra
+    (a no-op when it already imports; refused when lazy installs are off).
+    ``allow_install=False`` (``hermes mcp test --no-install``) never calls that
+    installer and never writes a dependency generation. A caller that patched
     ``_MCP_AVAILABLE`` false and never calls this function is unchanged.
     """
     global _MCP_AVAILABLE, _MCP_SDK_IMPORT_ATTEMPTED
@@ -214,7 +216,7 @@ def prepare_mcp_sdk_for_cli() -> bool:
         return True
     found = _mcp_spec_present()
     activation_error: Optional[BaseException] = None
-    if not found:
+    if not found and allow_install:
         try:
             from pm import ensure_import
             ensure_import("mcp")
