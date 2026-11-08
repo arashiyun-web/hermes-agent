@@ -1449,7 +1449,11 @@ class GatewayStartupMixin:
             )
         if enabled_platform_count <= 0:
             logger.warning("No messaging platforms enabled.")
-            logger.info("Gateway will continue running for cron job execution.")
+            from gateway.isolation import isolation_disables_cron
+            if isolation_disables_cron():
+                logger.info("Cron scheduler disabled (HERMES_ISOLATION_NO_CRON); channels stay off.")
+            else:
+                logger.info("Gateway will continue running for cron job execution.")
             return False
         if startup_retryable_errors:
             # All retryable: stay alive (cron runs, watcher recovers) rather than systemd restart-loop.

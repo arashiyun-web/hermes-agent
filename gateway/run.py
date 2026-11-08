@@ -5623,6 +5623,19 @@ async def _start_gateway_start_control_socket(runner):
 def _start_gateway_start_cron_and_housekeeping(runner):
     """Start the cron scheduler thread + gateway housekeeping thread; returns
     ``(cron_stop, cron_provider, cron_thread, housekeeping_thread)``."""
+    from gateway.isolation import isolation_disables_cron
+
+    if isolation_disables_cron():
+        # Housekeeping stays; it is not the cron ticker. No job thread is created.
+        logger.info("Cron scheduler not started (HERMES_ISOLATION_NO_CRON)")
+        cron_stop = threading.Event()
+        housekeeping_thread = threading.Thread(
+            target=_start_gateway_housekeeping, args=(cron_stop,),
+            kwargs={"adapters": runner.adapters, "loop": asyncio.get_running_loop(),
+                    "cron_provider": None, "runner": runner, "cron_thread": None},
+            daemon=True, name="gateway-housekeeping")
+        housekeeping_thread.start()
+        return cron_stop, None, None, housekeeping_thread
     # The event loop is passed so cron delivery can use live adapters (E2EE support).
     from cron.scheduler_provider import (
         InProcessCronScheduler, resolve_cron_scheduler, scheduler_for_profile_mode)
@@ -5668,6 +5681,8 @@ def _start_gateway_start_cron_and_housekeeping(runner):
     cron_thread = SupervisedTickerThread(
         cron_provider.start, args=(cron_stop,), kwargs=cron_start_kwargs, stop_event=cron_stop)
     cron_thread.start()
+    from gateway.isolation import mark_cron_scheduler_started
+    mark_cron_scheduler_started()
 
     # External providers fire over loopback HTTP to THIS process's api_server; if it never came up (usually
     # API_SERVER_KEY missing) every fire fails while manual runs work — misread as a job bug. Say it ONCE.
